@@ -41,7 +41,7 @@ requirements.txt  # python-chess, pytest
 
 ---
 
-### Task 2 — Evaluation Function
+### Task 2 — Evaluation Function ✅ DONE
 **Description:** Implement a board evaluation heuristic in `chessbot/evaluation.py`.
 
 **Acceptance Criteria:**
