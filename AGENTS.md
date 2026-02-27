@@ -47,3 +47,5 @@ ChessBot: a UCI-compatible Python chess engine using `python-chess` for move gen
 - `CHECKMATE_SCORE = 1_000_000`; initial alpha/beta window: `-(CHECKMATE_SCORE+1)` to `CHECKMATE_SCORE+1`
 - Stalemate FEN for tests (Black to move, no legal moves): `"k7/2K5/1Q6/8/8/8/8/8 b - - 0 1"`
 - Back-rank mate-in-1 FEN: `"1k6/8/1K6/8/8/8/8/7R w - - 0 1"` → Rh8# is the mating move
+- `chessbot/cli.py` is the ONLY missing file; `main.py` already imports `run_cli` from it — creating cli.py is the sole remaining task
+- CLI does not require tests (it's an interactive I/O wrapper)
