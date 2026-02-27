@@ -108,7 +108,7 @@ requirements.txt  # python-chess, pytest
 
 ---
 
-### Task 5 — UCI Protocol Handler
+### Task 5 — UCI Protocol Handler ✅ DONE
 **Description:** Implement the UCI stdin/stdout loop in `chessbot/uci.py`.
 
 **Acceptance Criteria:**
@@ -119,13 +119,20 @@ requirements.txt  # python-chess, pytest
 - `ucinewgame` → resets internal board to starting position.
 - `position startpos moves e2e4 ...` → applies moves from starting position.
 - `position fen <FEN> moves ...` → sets board from FEN then applies moves.
-- `go wtime <ms> btime <ms> [movestogo <n>]` → calls timed search, outputs `bestmove <uci_move>`.
-- `go depth <n>` → calls depth-limited search, outputs `bestmove <uci_move>`.
+- `go wtime <ms> btime <ms> [movestogo <n>]` → calls `get_best_move_timed`, outputs `bestmove <uci_move>`.
+- `go depth <n>` → calls `get_best_move(board, depth=n)`, outputs `bestmove <uci_move>`.
+- `go` with no recognized time args → falls back to `get_best_move(board)` at default depth.
 - `quit` → exits cleanly.
-- All output goes to stdout; flush after each line.
+- All output goes to stdout; use `flush=True` in every `print` call.
 - Tests in `tests/test_uci.py`:
   - Parsing of `position` command (startpos, FEN, with and without moves).
   - `go depth 1` returns a valid UCI move string from a known position.
+
+**Verified implementation notes:**
+- 9 tests in `tests/test_uci.py` (exceeds requirement): startpos reset, startpos+moves, fen, fen+moves, go depth 1, uci response, isready, ucinewgame, unknown command.
+- `handle_command(board, line) -> str | None` helper exposed for direct unit testing.
+- FEN split on `"moves"` token works correctly; FEN fields never contain `"moves"` as a standalone word.
+- All 22 tests (7 eval + 5 engine + 9 UCI + 1 extra eval) pass.
 
 **Dependencies:** Task 4
 **Complexity:** M
@@ -137,16 +144,19 @@ requirements.txt  # python-chess, pytest
 
 **Acceptance Criteria:**
 - `run_cli()` prompts the user to pick a color (White/Black).
-- After each human move, displays the board using `python-chess` ASCII representation.
+- After each human move, displays the board using `python-chess` ASCII representation (`str(board)`).
 - Validates human moves; re-prompts on illegal input.
-- Engine responds with its chosen move (using `get_best_move` or `get_best_move_timed`).
-- Game ends with a message when checkmate, stalemate, or draw is detected.
-- Accepts moves in UCI notation (e.g. `e2e4`) or algebraic notation via `chess.Board.parse_san`.
-- `main.py` supports a `--cli` flag to launch the CLI wrapper instead of the UCI loop.
+- Engine responds with its chosen move (using `get_best_move_timed` with generous dummy times, or `get_best_move` at default depth).
+- Game ends with a message when checkmate, stalemate, or draw is detected (`board.is_game_over()`).
+- Accepts moves in UCI notation (e.g. `e2e4`) via `chess.Move.from_uci()`, with fallback to algebraic notation via `board.parse_san()`.
+- `main.py` supports a `--cli` flag to launch `run_cli()` — already wired up.
 
-**Note:** `main.py` already has the `--cli` flag dispatch wired up (imports `run_cli` from `chessbot.cli`).
+**Implementation notes:**
+- No tests required for CLI (it's an interactive I/O wrapper); focus on usability.
+- Engine move display: print `Engine plays: <uci_move>` then show updated board.
+- Handle `KeyboardInterrupt` (Ctrl+C) gracefully with a goodbye message.
 
-**Dependencies:** Task 5 (for timed search) or Task 3 (minimum viable)
+**Dependencies:** Task 3 (minimum viable; Task 4 preferred for timed search)
 **Complexity:** S
 
 ---
@@ -158,8 +168,18 @@ requirements.txt  # python-chess, pytest
 - `pytest` runs without errors from the project root.
 - `tests/test_evaluation.py`: ≥ 5 tests (see Task 2 criteria) — **already satisfied with 7 tests**.
 - `tests/test_engine.py`: ≥ 3 tests (see Task 3 criteria), including at least one checkmate-in-1 — **already satisfied with 5 tests**.
-- `tests/test_uci.py`: ≥ 3 tests (see Task 5 criteria).
+- `tests/test_uci.py`: ≥ 3 tests covering:
+  - `position startpos` sets the board to the starting position.
+  - `position startpos moves e2e4` advances the board correctly.
+  - `position fen <FEN>` sets the board from a FEN string.
+  - `go depth 1` outputs a line matching `bestmove [a-h][1-8][a-h][1-8][qrbn]?`.
 - No tests import from `main.py` or depend on stdin/stdout of the UCI loop directly — they call module functions.
+
+**Implementation notes:**
+- Test `uci.py` by calling a helper that parses/executes commands against a board object, or by
+  capturing stdout with `capsys` (pytest fixture) and feeding commands via monkeypatching stdin.
+- Alternatively, expose a `handle_command(board, line) -> str | None` helper in `uci.py` that
+  returns the response string; tests call this directly without subprocess overhead.
 
 **Dependencies:** Tasks 2, 3, 5
 **Complexity:** M
@@ -174,6 +194,6 @@ requirements.txt  # python-chess, pytest
 | 2 | Evaluation Function | S | 1 | ✅ Done |
 | 3 | Minimax + Alpha-Beta | M | 2 | ✅ Done |
 | 4 | Time Management | S | 3 | ✅ Done |
-| 5 | UCI Protocol Handler | M | 4 | ⬜ TODO |
+| 5 | UCI Protocol Handler | M | 4 | ✅ Done |
 | 6 | CLI Wrapper | S | 3 | ⬜ TODO |
-| 7 | Comprehensive Tests | M | 2, 3, 5 | ⬜ TODO (eval ✅ + engine ✅ tests done; test_uci.py missing) |
+| 7 | Comprehensive Tests | M | 2, 3, 5 | ⬜ TODO (eval ✅ + engine ✅ + uci ✅ tests done) |
