@@ -75,18 +75,19 @@ requirements.txt  # python-chess, pytest
   - Does not return `None` when legal moves exist.
 
 **Verified implementation notes:**
-- 5 tests implemented (exceeds requirement of 3).
+- 5 tests implemented (exceeds requirement of 3): legal move from start, no-None guarantee,
+  checkmate-in-1 (Rh8#), stalemate returns 0, mated position returns -CHECKMATE_SCORE.
 - Pure negamax formulation; `search(board, depth, alpha, beta)` — no `maximizing` param needed.
 - `CHECKMATE_SCORE = 1_000_000`; checkmate at root returns `-CHECKMATE_SCORE`.
 - Move ordering: captures before quiet moves via `_order_moves()`.
-- All 13 tests (evaluation + engine) pass.
+- All 12 tests (7 evaluation + 5 engine) pass.
 
 **Dependencies:** Task 2
 **Complexity:** M
 
 ---
 
-### Task 4 — Time Management
+### Task 4 — Time Management ✅ DONE
 **Description:** Add basic time-budgeting logic to `chessbot/engine.py` so the engine respects `go` time limits.
 
 **Acceptance Criteria:**
@@ -95,6 +96,12 @@ requirements.txt  # python-chess, pytest
 - Uses `time.monotonic()` for timing; search is interrupted between depths (not mid-search).
 - Returns the best move found at the deepest completed depth even if time runs out.
 - Minimum depth of 1 is always completed.
+
+**Verified implementation notes:**
+- `_BUDGET_SAFETY = 0.95`; budget = `player_time_ms / 1000 / divisor * 0.95` seconds.
+- Iterative deepening starts at depth 1 (always completed) then increments while `time.monotonic() < deadline`.
+- White/Black time selected based on `board.turn`.
+- All 13 existing tests continue to pass.
 
 **Dependencies:** Task 3
 **Complexity:** S
@@ -150,7 +157,7 @@ requirements.txt  # python-chess, pytest
 **Acceptance Criteria:**
 - `pytest` runs without errors from the project root.
 - `tests/test_evaluation.py`: ≥ 5 tests (see Task 2 criteria) — **already satisfied with 7 tests**.
-- `tests/test_engine.py`: ≥ 3 tests (see Task 3 criteria), including at least one checkmate-in-1.
+- `tests/test_engine.py`: ≥ 3 tests (see Task 3 criteria), including at least one checkmate-in-1 — **already satisfied with 5 tests**.
 - `tests/test_uci.py`: ≥ 3 tests (see Task 5 criteria).
 - No tests import from `main.py` or depend on stdin/stdout of the UCI loop directly — they call module functions.
 
@@ -166,7 +173,7 @@ requirements.txt  # python-chess, pytest
 | 1 | Project Setup | S | — | ✅ Done |
 | 2 | Evaluation Function | S | 1 | ✅ Done |
 | 3 | Minimax + Alpha-Beta | M | 2 | ✅ Done |
-| 4 | Time Management | S | 3 | ⬜ TODO |
+| 4 | Time Management | S | 3 | ✅ Done |
 | 5 | UCI Protocol Handler | M | 4 | ⬜ TODO |
 | 6 | CLI Wrapper | S | 3 | ⬜ TODO |
-| 7 | Comprehensive Tests | M | 2, 3, 5 | ⬜ TODO (eval tests done) |
+| 7 | Comprehensive Tests | M | 2, 3, 5 | ⬜ TODO (eval ✅ + engine ✅ tests done; test_uci.py missing) |

@@ -4,8 +4,12 @@ Uses the negamax formulation: the score returned by `search` is always
 from the perspective of the *side to move* — positive means the current
 player is better off, negative means they are worse off.
 
-The public entry point is `get_best_move(board, depth)`.
+Public entry points:
+  get_best_move(board, depth)                              – fixed depth
+  get_best_move_timed(board, wtime_ms, btime_ms, ...)     – time-managed
 """
+
+import time
 
 import chess
 
@@ -120,3 +124,60 @@ def get_best_move(board: chess.Board, depth: int = DEFAULT_DEPTH) -> chess.Move:
     # `search` guarantees a move when legal moves exist; this should never fire.
     assert move is not None, "search returned None despite legal moves existing"
     return move
+
+
+# Safety margin: never use more than this fraction of the allocated budget
+# to leave a small buffer for overhead / communication latency.
+_BUDGET_SAFETY = 0.95
+
+
+def get_best_move_timed(
+    board: chess.Board,
+    wtime_ms: int,
+    btime_ms: int,
+    movestogo: int | None = None,
+) -> chess.Move:
+    """Return the best move using iterative deepening within a time budget.
+
+    The time budget is derived from the remaining time for the side to move:
+        budget = player_time_ms / (movestogo or 30) * safety_margin
+
+    Search starts at depth 1 and deepens as long as the budget allows.
+    The search is only interrupted *between* depths (never mid-search), so
+    the move returned is always from a fully completed search depth.
+
+    Args:
+        board:       Current board position.
+        wtime_ms:    White's remaining time in milliseconds.
+        btime_ms:    Black's remaining time in milliseconds.
+        movestogo:   Expected number of moves until the next time control
+                     (None → assume 30 moves remaining).
+
+    Returns:
+        The best chess.Move found within the budget.
+
+    Raises:
+        ValueError: If there are no legal moves (caller should check first).
+    """
+    if not any(board.legal_moves):
+        raise ValueError("get_best_move_timed called on a position with no legal moves")
+
+    # Select the time for the side to move.
+    player_time_ms = wtime_ms if board.turn == chess.WHITE else btime_ms
+    divisor = movestogo if movestogo and movestogo > 0 else 30
+    budget_s = (player_time_ms / 1000) / divisor * _BUDGET_SAFETY
+
+    deadline = time.monotonic() + budget_s
+
+    # Always complete at least depth 1 regardless of budget.
+    _, best_move = search(board, 1, -(CHECKMATE_SCORE + 1), CHECKMATE_SCORE + 1)
+    assert best_move is not None  # legal moves exist, so search must find one
+
+    depth = 2
+    while time.monotonic() < deadline:
+        _, candidate = search(board, depth, -(CHECKMATE_SCORE + 1), CHECKMATE_SCORE + 1)
+        assert candidate is not None
+        best_move = candidate
+        depth += 1
+
+    return best_move
