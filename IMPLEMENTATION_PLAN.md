@@ -51,12 +51,16 @@ requirements.txt  # python-chess, pytest
 - Returns 0 for draw (insufficient material, stalemate handled by the caller).
 - At least 5 tests in `tests/test_evaluation.py` covering: starting position ≈ 0, material imbalance, mirror symmetry (same score if colors are flipped and eval is negated).
 
+**Verified implementation notes:**
+- 7 tests implemented (exceeds requirement of 5).
+- Black PST mirroring uses `sq ^ 56` (vertical mirror), verified correct.
+
 **Dependencies:** Task 1
 **Complexity:** S
 
 ---
 
-### Task 3 — Minimax Search with Alpha-Beta Pruning
+### Task 3 — Minimax Search with Alpha-Beta Pruning ✅ DONE
 **Description:** Implement the search algorithm in `chessbot/engine.py`.
 
 **Acceptance Criteria:**
@@ -69,6 +73,13 @@ requirements.txt  # python-chess, pytest
   - Finds checkmate-in-1 given a known position.
   - Returns a legal move from the starting position.
   - Does not return `None` when legal moves exist.
+
+**Verified implementation notes:**
+- 5 tests implemented (exceeds requirement of 3).
+- Pure negamax formulation; `search(board, depth, alpha, beta)` — no `maximizing` param needed.
+- `CHECKMATE_SCORE = 1_000_000`; checkmate at root returns `-CHECKMATE_SCORE`.
+- Move ordering: captures before quiet moves via `_order_moves()`.
+- All 13 tests (evaluation + engine) pass.
 
 **Dependencies:** Task 2
 **Complexity:** M
@@ -126,6 +137,8 @@ requirements.txt  # python-chess, pytest
 - Accepts moves in UCI notation (e.g. `e2e4`) or algebraic notation via `chess.Board.parse_san`.
 - `main.py` supports a `--cli` flag to launch the CLI wrapper instead of the UCI loop.
 
+**Note:** `main.py` already has the `--cli` flag dispatch wired up (imports `run_cli` from `chessbot.cli`).
+
 **Dependencies:** Task 5 (for timed search) or Task 3 (minimum viable)
 **Complexity:** S
 
@@ -136,7 +149,7 @@ requirements.txt  # python-chess, pytest
 
 **Acceptance Criteria:**
 - `pytest` runs without errors from the project root.
-- `tests/test_evaluation.py`: ≥ 5 tests (see Task 2 criteria).
+- `tests/test_evaluation.py`: ≥ 5 tests (see Task 2 criteria) — **already satisfied with 7 tests**.
 - `tests/test_engine.py`: ≥ 3 tests (see Task 3 criteria), including at least one checkmate-in-1.
 - `tests/test_uci.py`: ≥ 3 tests (see Task 5 criteria).
 - No tests import from `main.py` or depend on stdin/stdout of the UCI loop directly — they call module functions.
@@ -148,12 +161,12 @@ requirements.txt  # python-chess, pytest
 
 ## Implementation Order
 
-| # | Task | Complexity | Depends On |
-|---|------|------------|------------|
-| 1 | Project Setup | S | — |
-| 2 | Evaluation Function | S | 1 |
-| 3 | Minimax + Alpha-Beta | M | 2 |
-| 4 | Time Management | S | 3 |
-| 5 | UCI Protocol Handler | M | 4 |
-| 6 | CLI Wrapper | S | 3 |
-| 7 | Comprehensive Tests | M | 2, 3, 5 |
+| # | Task | Complexity | Depends On | Status |
+|---|------|------------|------------|--------|
+| 1 | Project Setup | S | — | ✅ Done |
+| 2 | Evaluation Function | S | 1 | ✅ Done |
+| 3 | Minimax + Alpha-Beta | M | 2 | ✅ Done |
+| 4 | Time Management | S | 3 | ⬜ TODO |
+| 5 | UCI Protocol Handler | M | 4 | ⬜ TODO |
+| 6 | CLI Wrapper | S | 3 | ⬜ TODO |
+| 7 | Comprehensive Tests | M | 2, 3, 5 | ⬜ TODO (eval tests done) |
