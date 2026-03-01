@@ -75,3 +75,58 @@ def test_search_returns_negative_checkmate_score_when_mated():
     score, move = search(board, depth=1, alpha=-(CHECKMATE_SCORE + 1), beta=CHECKMATE_SCORE + 1)
     assert score == -CHECKMATE_SCORE
     assert move is None
+
+
+# ---------------------------------------------------------------------------
+# 6. Avoids threefold repetition when winning
+# ---------------------------------------------------------------------------
+
+def test_avoids_repetition_when_winning():
+    """Engine must not repeat positions when it has a winning advantage (Q+R vs K).
+
+    We set up a position where White has Q+R vs lone K, then play out the
+    move history so one more repeat would trigger threefold repetition.
+    The engine should avoid the repeating move.
+    """
+    # White: Kg1, Qd1, Ra1 — Black: Kg8 (Q+R vs lone K)
+    board = chess.Board("6k1/8/8/8/8/8/8/R2Q2K1 w - - 0 1")
+
+    # Simulate a move sequence that creates a repeated position:
+    # 1. Qd1-d2 Kg8-h8  2. Qd2-d1 Kh8-g8  (back to near-start)
+    # Now if White plays Qd1-d2 again, the position after Kg8-h8 would repeat.
+    moves = ["d1d2", "g8h8", "d2d1", "h8g8"]
+    for uci in moves:
+        board.push(chess.Move.from_uci(uci))
+
+    # White to move — the engine should NOT play Qd1-d2 (which would set up
+    # the third repetition after Black's forced reply).
+    move = get_best_move(board, depth=3)
+    assert move != chess.Move.from_uci("d1d2"), (
+        "Engine repeated Qd1-d2 despite having Q+R vs K — draw avoidance failed"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 7. Seeks threefold repetition when losing
+# ---------------------------------------------------------------------------
+
+def test_seeks_repetition_when_losing():
+    """Engine should seek repetition when it's losing (K vs Q+R).
+
+    Black has a lone king vs White's Q+R. We set up a position where Black
+    can force a draw by repetition and verify the engine chooses it.
+    """
+    # Black: Kg8 — White: Kg1, Qd2, Ra1.  Black to move.
+    board = chess.Board("6k1/8/8/8/8/8/3Q4/R5K1 b - - 0 1")
+
+    # History: 1... Kg8-h8  2. Qd2-d1 Kh8-g8  3. Qd1-d2 ...
+    # Now Black can play Kg8-h8 again to create the second repeat.
+    moves = ["g8h8", "d2d1", "h8g8", "d1d2"]
+    for uci in moves:
+        board.push(chess.Move.from_uci(uci))
+
+    # Black to move — the engine should play Kg8-h8 to head toward a draw.
+    move = get_best_move(board, depth=3)
+    assert move == chess.Move.from_uci("g8h8"), (
+        f"Engine played {move.uci()} instead of Kg8-h8 — expected it to seek repetition draw"
+    )

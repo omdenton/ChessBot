@@ -83,8 +83,12 @@ def search(
 
     for move in _order_moves(board):
         board.push(move)
-        # Recurse with negated bounds (opponent's perspective).
-        child_score, _ = search(board, depth - 1, -beta, -alpha)
+        # Treat repeated positions as draws to avoid threefold repetition.
+        if board.is_repetition(2):
+            child_score = 0
+        else:
+            # Recurse with negated bounds (opponent's perspective).
+            child_score, _ = search(board, depth - 1, -beta, -alpha)
         board.pop()
 
         # Flip the child score back to our perspective.
