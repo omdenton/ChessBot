@@ -31,6 +31,11 @@ The bot must implement the standard UCI loop to allow it to communicate with che
 - **Primary:** Standard input/output (UCI) for use with external tools.
 - **Secondary:** A simple CLI wrapper that allows a user to manually input moves and pick a color for testing.
 
+### 4. Draw Avoidance
+The engine must avoid drawing games it is winning. Specifically:
+- **Threefold repetition**: When the engine has a significant material advantage, it must not repeat positions. The search should detect when a candidate move would cause a threefold repetition and penalise that move.
+- **Progress in winning positions**: In endgames with a large material advantage (e.g. Q+R vs lone K), the engine should actively drive toward checkmate rather than shuffling pieces aimlessly.
+
 ## Ralph-Loop Readiness
 - **Modularity:** Separate the UCI handling from the search/evaluation logic to allow for easy unit testing.
 - **Validation:** Every core component (eval function, search depth, move application) should have associated tests to ensure the Ralph Loop can verify progress at each step.

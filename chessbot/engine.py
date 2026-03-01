@@ -166,6 +166,8 @@ def get_best_move_timed(
     player_time_ms = wtime_ms if board.turn == chess.WHITE else btime_ms
     divisor = movestogo if movestogo and movestogo > 0 else 30
     budget_s = (player_time_ms / 1000) / divisor * _BUDGET_SAFETY
+    # Cap thinking time to 10 seconds for unlimited/correspondence games
+    budget_s = min(budget_s, 10.0)
 
     deadline = time.monotonic() + budget_s
 
