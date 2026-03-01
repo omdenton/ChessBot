@@ -1,5 +1,6 @@
 import os
 import json
+import random
 import httpx
 import chess
 import asyncio
@@ -7,6 +8,9 @@ import asyncio
 from chessbot.engine import get_best_move_timed
 
 LICHESS_API_BASE_URL = "https://lichess.org"
+
+# Track active games so the auto-challenge loop waits while playing.
+_active_games: set[str] = set()
 
 async def _get_lichess_token() -> str:
     """Retrieves the Lichess API token from environment variables."""
@@ -87,6 +91,7 @@ async def _send_move(client: httpx.AsyncClient, token: str, game_id: str, move_u
 
 async def _handle_game_start(client: httpx.AsyncClient, token: str, bot_id: str, game_id: str):
     """Handles a game start event, initiating the game loop."""
+    _active_games.add(game_id)
     await asyncio.sleep(2)  # Add a small delay to avoid race conditions
     print(f"Game started! ID: {game_id}. Connecting to game stream...")
 
@@ -215,6 +220,9 @@ async def _handle_game_start(client: httpx.AsyncClient, token: str, bot_id: str,
             pass
     except httpx.RequestError as e:
         print(f"[{game_id}] Request error connecting to game stream: {e}")
+    finally:
+        _active_games.discard(game_id)
+        print(f"[{game_id}] Game removed from active games.")
 
 async def _stream_events(client: httpx.AsyncClient, token: str, bot_id: str):
     """Connects to the Lichess event stream and processes events."""
@@ -259,6 +267,73 @@ async def _stream_events(client: httpx.AsyncClient, token: str, bot_id: str):
     except httpx.RequestError as e:
         print(f"Request error connecting to event stream: {e}")
 
+async def _get_online_bots(client: httpx.AsyncClient, token: str, bot_id: str) -> list[str]:
+    """Fetch a list of online bot usernames (excluding ourselves)."""
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/x-ndjson"}
+    bots: list[str] = []
+    try:
+        async with client.stream("GET", f"{LICHESS_API_BASE_URL}/api/bot/online", headers=headers, timeout=30) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if line.strip():
+                    try:
+                        data = json.loads(line)
+                        username = data.get("username", "")
+                        if username.lower() != bot_id:
+                            bots.append(username)
+                    except json.JSONDecodeError:
+                        pass
+    except (httpx.HTTPStatusError, httpx.RequestError) as e:
+        print(f"[auto-challenge] Error fetching online bots: {e}")
+    return bots
+
+
+async def _auto_challenge_loop(client: httpx.AsyncClient, token: str, bot_id: str):
+    """Continuously challenge online bots when not already playing."""
+    headers = {"Authorization": f"Bearer {token}"}
+    # Wait a bit on startup for the event stream to connect first.
+    await asyncio.sleep(5)
+    print("[auto-challenge] Auto-challenge loop started.")
+
+    while True:
+        if _active_games:
+            await asyncio.sleep(10)
+            continue
+
+        bots = await _get_online_bots(client, token, bot_id)
+        if not bots:
+            print("[auto-challenge] No online bots found. Waiting 30s...")
+            await asyncio.sleep(30)
+            continue
+
+        target = random.choice(bots)
+        print(f"[auto-challenge] Challenging {target} (rated blitz 3+2)...")
+
+        try:
+            response = await client.post(
+                f"{LICHESS_API_BASE_URL}/api/challenge/{target}",
+                headers=headers,
+                data={
+                    "rated": "true",
+                    "clock.limit": "180",
+                    "clock.increment": "2",
+                    "color": "random",
+                },
+            )
+            if response.status_code == 429:
+                print("[auto-challenge] Rate limited. Waiting 60s...")
+                await asyncio.sleep(60)
+                continue
+            response.raise_for_status()
+            print(f"[auto-challenge] Challenge sent to {target}.")
+        except httpx.HTTPStatusError as e:
+            print(f"[auto-challenge] Challenge to {target} failed: {e.response.status_code} {e.response.text}")
+        except httpx.RequestError as e:
+            print(f"[auto-challenge] Request error challenging {target}: {e}")
+
+        await asyncio.sleep(30)
+
+
 async def run_lichess_bot():
     """Main function to run the Lichess bot."""
     token = await _get_lichess_token()
@@ -271,7 +346,10 @@ async def run_lichess_bot():
         if not bot_id:
             print("Failed to get bot ID. Exiting.")
             return
-        await _stream_events(client, token, bot_id)
+        await asyncio.gather(
+            _stream_events(client, token, bot_id),
+            _auto_challenge_loop(client, token, bot_id),
+        )
 
 def main():
     """Synchronous entry point for the Lichess bot."""
