@@ -38,9 +38,9 @@ ChessBot: a UCI-compatible Python chess engine using `python-chess` for move gen
 ## Current State (as of planning iteration)
 
 - **Phase 1 COMPLETE:** Basic engine works — UCI, CLI, Lichess bot, evaluation with PSTs, negamax+alpha-beta, time management.
-- **Phase 2 IN PROGRESS:** Task 8 (MVV-LVA) done. Next: Task 9 (quiescence), Task 10 (TT), Task 11 (check extensions).
-- **Version:** 1.3.0
-- **Tests:** 25 passing
+- **Phase 2 IN PROGRESS:** Task 8 (MVV-LVA) done, Task 9 (quiescence) done. Next: Task 10 (TT), Task 11 (check extensions).
+- **Tests:** 27 passing (all green)
+- **All spec requirements mapped** to tasks 1-31; no gaps identified.
 
 ## Gotchas
 

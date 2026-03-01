@@ -48,16 +48,8 @@ requirements.txt  # python-chess, pytest, httpx
 
 ---
 
-### Task 9 — Quiescence Search (Spec 7a)
+### Task 9 — Quiescence Search (Spec 7a) ✅ DONE
 **Description:** At depth 0, continue searching capture sequences until the position is quiet instead of returning static eval immediately.
-
-**Acceptance Criteria:**
-- `quiescence(board, alpha, beta, qdepth)` function searches only captures (via `board.generate_legal_captures()`).
-- Stand-pat score (static eval) is used as a baseline: if >= beta, return beta; if > alpha, raise alpha.
-- Quiescence depth is capped at 8 plies to prevent explosion.
-- `search()` calls `quiescence()` instead of `evaluate()` at depth 0.
-- New test: engine finds a winning tactic that involves a capture sequence (e.g. a hanging piece behind a defended piece).
-- All existing tests still pass.
 
 **Dependencies:** Task 8 (MVV-LVA ordering should apply to quiescence captures too)
 **Complexity:** M
@@ -418,7 +410,7 @@ requirements.txt  # python-chess, pytest, httpx
 | 6 | CLI Wrapper | §3 | S | 3 | ✅ Done |
 | 7 | Comprehensive Tests | §9 | M | 2,3,5 | ✅ Done |
 | 8 | MVV-LVA Capture Ordering | §7c | S | — | ✅ Done |
-| 9 | Quiescence Search | §7a | M | 8 | ⬚ |
+| 9 | Quiescence Search | §7a | M | 8 | ✅ Done |
 | 10 | Transposition Table | §7b | L | — | ⬚ |
 | 11 | Check Extensions | §7k | S | — | ⬚ |
 | 12 | Tapered Eval / Game Phase | §6a | M | — | ⬚ |

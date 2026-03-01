@@ -21,6 +21,9 @@ CHECKMATE_SCORE = 1_000_000
 # Default search depth (plies).
 DEFAULT_DEPTH = 3
 
+# Maximum depth for quiescence search to prevent explosion.
+_MAX_QDEPTH = 8
+
 
 def _mvv_lva_score(board: chess.Board, move: chess.Move) -> int:
     """Return MVV-LVA score for a capture move.
@@ -49,6 +52,58 @@ def _order_moves(board: chess.Board) -> list[chess.Move]:
     # Sort captures by descending MVV-LVA score.
     captures.sort(key=lambda t: t[0], reverse=True)
     return [m for _, m in captures] + quiets
+
+
+def _order_captures(board: chess.Board) -> list[chess.Move]:
+    """Return legal captures sorted by MVV-LVA score (descending)."""
+    scored: list[tuple[int, chess.Move]] = []
+    for move in board.generate_legal_captures():
+        scored.append((_mvv_lva_score(board, move), move))
+    scored.sort(key=lambda t: t[0], reverse=True)
+    return [m for _, m in scored]
+
+
+def quiescence(
+    board: chess.Board,
+    alpha: int,
+    beta: int,
+    qdepth: int = 0,
+) -> int:
+    """Quiescence search: continue searching captures until the position is quiet.
+
+    Uses stand-pat score as baseline. Only captures are explored (via
+    board.generate_legal_captures()), ordered by MVV-LVA. Capped at
+    _MAX_QDEPTH plies to prevent explosion.
+
+    Returns score from the side-to-move perspective.
+    """
+    # Stand-pat: static evaluation as a baseline.
+    stand_pat = evaluate(board)
+    if board.turn == chess.BLACK:
+        stand_pat = -stand_pat
+
+    if stand_pat >= beta:
+        return beta
+
+    if stand_pat > alpha:
+        alpha = stand_pat
+
+    # Stop deepening if we hit the quiescence depth cap.
+    if qdepth >= _MAX_QDEPTH:
+        return alpha
+
+    for move in _order_captures(board):
+        board.push(move)
+        score = -quiescence(board, -beta, -alpha, qdepth + 1)
+        board.pop()
+
+        if score >= beta:
+            return beta
+
+        if score > alpha:
+            alpha = score
+
+    return alpha
 
 
 def search(
@@ -85,14 +140,9 @@ def search(
         # Stalemate, insufficient material, 50-move rule, or repetition.
         return 0, None
 
-    # --- Leaf node: static evaluation ---
+    # --- Leaf node: drop into quiescence search ---
     if depth == 0:
-        # evaluate() returns score from White's perspective (+ = White better).
-        # Negate for Black so the returned value is always side-to-move relative.
-        score = evaluate(board)
-        if board.turn == chess.BLACK:
-            score = -score
-        return score, None
+        return quiescence(board, alpha, beta), None
 
     # --- Internal node: iterate over moves ---
     best_score = -(CHECKMATE_SCORE + 1)

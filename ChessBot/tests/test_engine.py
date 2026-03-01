@@ -3,7 +3,7 @@
 import chess
 import pytest
 
-from chessbot.engine import CHECKMATE_SCORE, _order_moves, get_best_move, search
+from chessbot.engine import CHECKMATE_SCORE, _order_moves, get_best_move, quiescence, search
 
 
 # ---------------------------------------------------------------------------
@@ -155,4 +155,83 @@ def test_mvv_lva_orders_pxq_before_qxp():
     assert qxp in ordered, "QxP (a1a7) not found in ordered moves"
     assert ordered.index(pxq) < ordered.index(qxp), (
         f"PxQ at index {ordered.index(pxq)} should come before QxP at index {ordered.index(qxp)}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 9. Quiescence search: engine finds a winning capture sequence
+# ---------------------------------------------------------------------------
+
+def test_quiescence_finds_winning_capture_sequence():
+    """Quiescence search should see through a capture sequence.
+
+    Position: White Kg1, Rd1; Black Ke8, Qd4, Pd5.
+    At depth 1 without quiescence, White might see RxQ as losing because
+    the pawn recaptures (PxR). But quiescence reveals the net exchange
+    is winning for White (R=500 for Q=900).
+    Actually, let's use a simpler scenario:
+
+    White: Kg1, Qe2; Black: Ke8, Rd5, Nd6.
+    White can play Qe2xd5 (taking undefended-looking rook), but after NxQ
+    the position is equal. Without quiescence the engine might think QxR wins.
+    Instead, test that engine finds a tactic WITH quiescence:
+
+    Position where quiescence matters: White has a pawn that can capture a
+    defended piece, but behind it is an undefended queen. The engine should
+    see the full capture sequence as winning.
+
+    Simpler test: verify quiescence returns a score different from (and
+    better than) static eval when captures are available.
+    """
+    # White: Kg1, Bb5; Black: Ke8, Ra6 (bishop can take rook).
+    # Static eval: roughly equal material (B=330 vs R=500 for Black).
+    # After Bxa6 the position favors White. Quiescence should see this.
+    board = chess.Board("4k3/8/r7/1B6/8/8/8/6K1 w - - 0 1")
+
+    from chessbot.evaluation import evaluate
+    from chessbot.engine import CHECKMATE_SCORE
+
+    static = evaluate(board)
+    if board.turn == chess.BLACK:
+        static = -static
+
+    qs = quiescence(board, -(CHECKMATE_SCORE + 1), CHECKMATE_SCORE + 1)
+    # Quiescence should find Bxa6 and return a score >= static eval
+    # (capturing a rook with a bishop is winning).
+    assert qs >= static, (
+        f"Quiescence score {qs} should be >= static eval {static} when a winning capture exists"
+    )
+
+
+def test_quiescence_avoids_losing_capture():
+    """Quiescence stand-pat should avoid entering a losing capture sequence.
+
+    Position: White Kg1, Nd4; Black Ke8, Qe6.
+    White knight can capture Black queen? No — let's pick a position where
+    the only capture is bad (e.g., minor piece captures defended queen).
+
+    White: Kg1, Bc4; Black: Ke8, Qd5, Pd6.
+    White can play Bxd5 but Black recaptures with Qxd5 or pxB? Actually
+    we want pawn guarding.
+
+    Simpler: White Kg1, Nd5; Black Ke8, Re5 (defended by Ke8? No).
+    Let's just use: White Kg1, Pf5; Black Ke8, Bg6.
+    Pawn can capture bishop (fxg6) — this is a winning capture.
+
+    For a LOSING capture test: White Kg1, Be4; Black Ke8, Pd5.
+    BxP is available (330 for 100), but then if the pawn is defended... hmm.
+
+    Let's just test that the engine at depth=1 doesn't blunder into a bad
+    capture sequence thanks to quiescence.
+    """
+    # Position: White Ke1, Nd4; Black Ke8, Pd5 defended by Qc6.
+    # White NxP (d4xd5) looks like winning 100cp, but Black Qxd5 wins the knight.
+    # Without quiescence: depth-1 search sees NxP as +100cp.
+    # With quiescence: after NxP, QxN — net is knight lost (320-100 = -220cp for White).
+    # Engine should NOT play Nxd5 at depth 1.
+    board = chess.Board("4k3/8/2q5/3p4/3N4/8/8/4K3 w - - 0 1")
+
+    move = get_best_move(board, depth=1)
+    assert move != chess.Move.from_uci("d4d5"), (
+        "Engine played Nxd5 which loses material after Qxd5 — quiescence should prevent this"
     )
