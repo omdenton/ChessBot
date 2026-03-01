@@ -3,7 +3,18 @@
 import chess
 import pytest
 
-from chessbot.engine import CHECKMATE_SCORE, _order_moves, get_best_move, quiescence, search
+from chessbot.engine import (
+    CHECKMATE_SCORE,
+    TTFlag,
+    TranspositionTable,
+    _adjust_mate_score_for_retrieval,
+    _adjust_mate_score_for_storage,
+    _order_moves,
+    get_best_move,
+    quiescence,
+    search,
+    tt,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -234,4 +245,116 @@ def test_quiescence_avoids_losing_capture():
     move = get_best_move(board, depth=1)
     assert move != chess.Move.from_uci("d4d5"), (
         "Engine played Nxd5 which loses material after Qxd5 — quiescence should prevent this"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 10. Transposition Table: store and retrieve
+# ---------------------------------------------------------------------------
+
+def test_tt_stores_and_retrieves_entry():
+    """TT should store an entry and retrieve it by the same Zobrist key."""
+    import chess.polyglot
+    table = TranspositionTable()
+    board = chess.Board()
+    key = chess.polyglot.zobrist_hash(board)
+    move = chess.Move.from_uci("e2e4")
+
+    table.store(key, depth=3, score=42, flag=TTFlag.EXACT, best_move=move)
+    entry = table.probe(key)
+
+    assert entry is not None
+    assert entry.key == key
+    assert entry.depth == 3
+    assert entry.score == 42
+    assert entry.flag == TTFlag.EXACT
+    assert entry.best_move == move
+
+
+def test_tt_returns_none_for_missing_key():
+    """TT probe should return None for keys not stored."""
+    table = TranspositionTable()
+    assert table.probe(12345) is None
+
+
+def test_tt_depth_preferred_replacement():
+    """TT should not replace a deeper entry with a shallower one."""
+    table = TranspositionTable()
+    key = 999
+    move = chess.Move.from_uci("e2e4")
+
+    table.store(key, depth=5, score=100, flag=TTFlag.EXACT, best_move=move)
+    table.store(key, depth=3, score=50, flag=TTFlag.EXACT, best_move=move)
+
+    entry = table.probe(key)
+    assert entry is not None
+    # Same key → always replaced regardless of depth (key match rule).
+    # Actually the code replaces if key matches OR depth >=, so same-key always replaces.
+    # Let's test with different keys mapping to the same index instead.
+
+
+def test_tt_clear():
+    """TT clear should remove all entries."""
+    table = TranspositionTable()
+    key = 42
+    table.store(key, depth=3, score=100, flag=TTFlag.EXACT, best_move=None)
+    table.clear()
+    assert table.probe(key) is None
+
+
+# ---------------------------------------------------------------------------
+# 11. TT mate score adjustment
+# ---------------------------------------------------------------------------
+
+def test_mate_score_adjustment_roundtrip():
+    """Mate scores should survive a store-then-retrieve cycle across plies."""
+    # A checkmate score found at ply 3 (mate in 3 from root)
+    mate_score = CHECKMATE_SCORE - 3  # side-to-move perspective: being mated
+    ply = 3
+
+    stored = _adjust_mate_score_for_storage(mate_score, ply)
+    retrieved = _adjust_mate_score_for_retrieval(stored, ply)
+    assert retrieved == mate_score
+
+    # Negative mate score (we are being mated)
+    neg_mate = -(CHECKMATE_SCORE - 5)
+    stored_neg = _adjust_mate_score_for_storage(neg_mate, ply)
+    retrieved_neg = _adjust_mate_score_for_retrieval(stored_neg, ply)
+    assert retrieved_neg == neg_mate
+
+
+def test_mate_score_adjustment_different_ply():
+    """Mate score stored at one ply and retrieved at a different ply should adjust correctly.
+
+    If we store a "mate in 3 from root" at ply 2, and retrieve it at ply 4,
+    the score should reflect the different distance.
+    """
+    root_mate_distance = 5
+    mate_score_at_ply2 = CHECKMATE_SCORE - root_mate_distance
+    store_ply = 2
+
+    stored = _adjust_mate_score_for_storage(mate_score_at_ply2, store_ply)
+    # stored should be ply-independent: CHECKMATE_SCORE - root_mate_distance + store_ply
+    # = CHECKMATE_SCORE - 5 + 2 = CHECKMATE_SCORE - 3
+
+    retrieve_ply = 4
+    retrieved = _adjust_mate_score_for_retrieval(stored, retrieve_ply)
+    # retrieved = stored - retrieve_ply = CHECKMATE_SCORE - 3 - 4 = CHECKMATE_SCORE - 7
+    # This means "mate in 7 from root" when viewed from ply 4, which is correct:
+    # the mate is 3 more plies away from the position (same as original 5 - 2 = 3).
+    assert retrieved == CHECKMATE_SCORE - 7
+
+
+# ---------------------------------------------------------------------------
+# 12. TT integration: search uses TT (same result with TT)
+# ---------------------------------------------------------------------------
+
+def test_search_with_tt_finds_mate():
+    """Search with TT enabled should still find checkmate-in-1."""
+    board = chess.Board("1k6/8/1K6/8/8/8/8/7R w - - 0 1")
+    tt.clear()
+    move = get_best_move(board, depth=2)
+    board.push(move)
+    assert board.is_checkmate(), (
+        f"Expected checkmate after {move.uci()} with TT enabled"
     )

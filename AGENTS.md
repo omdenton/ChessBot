@@ -38,9 +38,10 @@ ChessBot: a UCI-compatible Python chess engine using `python-chess` for move gen
 ## Current State (as of planning iteration)
 
 - **Phase 1 COMPLETE:** Basic engine works — UCI, CLI, Lichess bot, evaluation with PSTs, negamax+alpha-beta, time management.
-- **Phase 2 IN PROGRESS:** Task 8 (MVV-LVA) done, Task 9 (quiescence) done. Next: Task 10 (TT), Task 11 (check extensions).
-- **Tests:** 27 passing (all green)
+- **Phase 2 IN PROGRESS:** Task 8 (MVV-LVA) done, Task 9 (quiescence) done, Task 10 (TT) done. Next: Task 11 (check extensions).
+- **Tests:** 34 passing (all green)
 - **All spec requirements mapped** to tasks 1-31; no gaps identified.
+- **Next up:** Task 10 (Transposition Table) and Task 11 (Check Extensions) — both in Phase 2.
 
 ## Gotchas
 
@@ -52,7 +53,7 @@ ChessBot: a UCI-compatible Python chess engine using `python-chess` for move gen
 - `board.is_game_over()` is expensive in python-chess — spec recommends replacing with direct checks (no legal moves + is_check for mate/stalemate)
 - Time management interrupts between depth iterations, not mid-search — always return last completed depth's best move
 - Rook on 7th rank bonus already partially implemented in current PSTs
-- `board.zobrist_hash()` available in python-chess for transposition table
+- `chess.polyglot.zobrist_hash(board)` is the correct API for Zobrist hashing (NOT `board.zobrist_hash()`)
 - `board.generate_legal_captures()` available for quiescence search
 - `chess.Move.null()` available for null move pruning
 - `board.attacks(sq)` returns SquareSet of attacked squares (for mobility calculation)

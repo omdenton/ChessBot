@@ -10,8 +10,10 @@ Public entry points:
 """
 
 import time
+from enum import IntEnum
 
 import chess
+import chess.polyglot
 
 from chessbot.evaluation import MATERIAL, evaluate
 
@@ -23,6 +25,95 @@ DEFAULT_DEPTH = 3
 
 # Maximum depth for quiescence search to prevent explosion.
 _MAX_QDEPTH = 8
+
+# ---------------------------------------------------------------------------
+# Transposition Table
+# ---------------------------------------------------------------------------
+
+# TT size: 2^20 entries (~1M).
+_TT_SIZE = 1 << 20
+_TT_MASK = _TT_SIZE - 1
+
+
+class TTFlag(IntEnum):
+    EXACT = 0
+    LOWERBOUND = 1  # score is a lower bound (failed high / beta cutoff)
+    UPPERBOUND = 2  # score is an upper bound (failed low / all moves searched)
+
+
+class TTEntry:
+    """Single transposition table entry."""
+    __slots__ = ("key", "depth", "score", "flag", "best_move")
+
+    def __init__(
+        self,
+        key: int,
+        depth: int,
+        score: int,
+        flag: TTFlag,
+        best_move: chess.Move | None,
+    ):
+        self.key = key
+        self.depth = depth
+        self.score = score
+        self.flag = flag
+        self.best_move = best_move
+
+
+class TranspositionTable:
+    """Fixed-size transposition table with depth-preferred replacement."""
+
+    def __init__(self) -> None:
+        self._table: list[TTEntry | None] = [None] * _TT_SIZE
+
+    def clear(self) -> None:
+        self._table = [None] * _TT_SIZE
+
+    def probe(self, key: int) -> TTEntry | None:
+        entry = self._table[key & _TT_MASK]
+        if entry is not None and entry.key == key:
+            return entry
+        return None
+
+    def store(
+        self,
+        key: int,
+        depth: int,
+        score: int,
+        flag: TTFlag,
+        best_move: chess.Move | None,
+    ) -> None:
+        idx = key & _TT_MASK
+        existing = self._table[idx]
+        # Depth-preferred replacement: only replace if new depth >= stored depth.
+        if existing is None or existing.key == key or depth >= existing.depth:
+            self._table[idx] = TTEntry(key, depth, score, flag, best_move)
+
+
+# Global TT instance used across searches.
+tt = TranspositionTable()
+
+
+def _adjust_mate_score_for_storage(score: int, ply: int) -> int:
+    """Adjust mate scores to be ply-independent before storing in TT.
+
+    Mate scores are relative to the root, but in the TT we need them to be
+    position-relative so they work correctly when probed at different plies.
+    """
+    if score > CHECKMATE_SCORE - 1000:
+        return score + ply
+    if score < -(CHECKMATE_SCORE - 1000):
+        return score - ply
+    return score
+
+
+def _adjust_mate_score_for_retrieval(score: int, ply: int) -> int:
+    """Reverse the mate score adjustment when retrieving from TT."""
+    if score > CHECKMATE_SCORE - 1000:
+        return score - ply
+    if score < -(CHECKMATE_SCORE - 1000):
+        return score + ply
+    return score
 
 
 def _mvv_lva_score(board: chess.Board, move: chess.Move) -> int:
@@ -40,18 +131,26 @@ def _mvv_lva_score(board: chess.Board, move: chess.Move) -> int:
     return MATERIAL[victim_type] * 10 - MATERIAL[attacker_type]
 
 
-def _order_moves(board: chess.Board) -> list[chess.Move]:
-    """Return legal moves with captures sorted by MVV-LVA, then quiets."""
+def _order_moves(
+    board: chess.Board, tt_move: chess.Move | None = None
+) -> list[chess.Move]:
+    """Return legal moves with TT move first, then captures (MVV-LVA), then quiets."""
     captures: list[tuple[int, chess.Move]] = []
     quiets: list[chess.Move] = []
     for move in board.legal_moves:
+        if move == tt_move:
+            continue  # will be prepended
         if board.is_capture(move):
             captures.append((_mvv_lva_score(board, move), move))
         else:
             quiets.append(move)
     # Sort captures by descending MVV-LVA score.
     captures.sort(key=lambda t: t[0], reverse=True)
-    return [m for _, m in captures] + quiets
+    result = [m for _, m in captures] + quiets
+    # Prepend TT move if it's a legal move in this position.
+    if tt_move is not None and tt_move in board.legal_moves:
+        result.insert(0, tt_move)
+    return result
 
 
 def _order_captures(board: chess.Board) -> list[chess.Move]:
@@ -111,6 +210,7 @@ def search(
     depth: int,
     alpha: int,
     beta: int,
+    ply: int = 0,
 ) -> tuple[int, chess.Move | None]:
     """Negamax alpha-beta search.
 
@@ -128,6 +228,7 @@ def search(
         depth: Remaining search depth in plies.
         alpha: Lower bound on the score achievable (current player's perspective).
         beta:  Upper bound — if we exceed this, the opponent will avoid this line.
+        ply:   Distance from root (for mate score adjustment in TT).
 
     Returns:
         (best_score, best_move). best_move is None at leaf/terminal nodes.
@@ -136,7 +237,7 @@ def search(
     if board.is_game_over():
         if board.is_checkmate():
             # The side to move has been checkmated — they lose.
-            return -CHECKMATE_SCORE, None
+            return -CHECKMATE_SCORE + ply, None
         # Stalemate, insufficient material, 50-move rule, or repetition.
         return 0, None
 
@@ -144,18 +245,39 @@ def search(
     if depth == 0:
         return quiescence(board, alpha, beta), None
 
+    # --- TT probe ---
+    orig_alpha = alpha
+    tt_move: chess.Move | None = None
+    zobrist = chess.polyglot.zobrist_hash(board)
+    entry = tt.probe(zobrist)
+    if entry is not None and entry.depth >= depth:
+        tt_score = _adjust_mate_score_for_retrieval(entry.score, ply)
+        if entry.flag == TTFlag.EXACT:
+            return tt_score, entry.best_move
+        elif entry.flag == TTFlag.LOWERBOUND:
+            if tt_score > alpha:
+                alpha = tt_score
+        elif entry.flag == TTFlag.UPPERBOUND:
+            if tt_score < beta:
+                beta = tt_score
+        if alpha >= beta:
+            return tt_score, entry.best_move
+    # Use TT best move for ordering even if depth was insufficient.
+    if entry is not None:
+        tt_move = entry.best_move
+
     # --- Internal node: iterate over moves ---
     best_score = -(CHECKMATE_SCORE + 1)
     best_move: chess.Move | None = None
 
-    for move in _order_moves(board):
+    for move in _order_moves(board, tt_move):
         board.push(move)
         # Treat repeated positions as draws to avoid threefold repetition.
         if board.is_repetition(2):
             child_score = 0
         else:
             # Recurse with negated bounds (opponent's perspective).
-            child_score, _ = search(board, depth - 1, -beta, -alpha)
+            child_score, _ = search(board, depth - 1, -beta, -alpha, ply + 1)
         board.pop()
 
         # Flip the child score back to our perspective.
@@ -170,6 +292,21 @@ def search(
 
         if alpha >= beta:
             break  # Beta cutoff: opponent won't allow this line.
+
+    # --- TT store ---
+    if best_score <= orig_alpha:
+        flag = TTFlag.UPPERBOUND
+    elif best_score >= beta:
+        flag = TTFlag.LOWERBOUND
+    else:
+        flag = TTFlag.EXACT
+    tt.store(
+        zobrist,
+        depth,
+        _adjust_mate_score_for_storage(best_score, ply),
+        flag,
+        best_move,
+    )
 
     return best_score, best_move
 
@@ -190,6 +327,7 @@ def get_best_move(board: chess.Board, depth: int = DEFAULT_DEPTH) -> chess.Move:
     if not any(board.legal_moves):
         raise ValueError("get_best_move called on a position with no legal moves")
 
+    tt.clear()
     _, move = search(board, depth, -(CHECKMATE_SCORE + 1), CHECKMATE_SCORE + 1)
 
     # `search` guarantees a move when legal moves exist; this should never fire.
@@ -242,6 +380,7 @@ def get_best_move_timed(
 
     deadline = time.monotonic() + budget_s
 
+    tt.clear()
     # Always complete at least depth 1 regardless of budget.
     _, best_move = search(board, 1, -(CHECKMATE_SCORE + 1), CHECKMATE_SCORE + 1)
     assert best_move is not None  # legal moves exist, so search must find one

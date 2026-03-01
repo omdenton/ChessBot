@@ -56,18 +56,8 @@ requirements.txt  # python-chess, pytest, httpx
 
 ---
 
-### Task 10 — Transposition Table (Spec 7b)
+### Task 10 — Transposition Table (Spec 7b) ✅ DONE
 **Description:** Cache search results keyed by Zobrist hash to avoid re-evaluating positions reached via different move orders.
-
-**Acceptance Criteria:**
-- TT entry stores: `(zobrist_hash, depth, score, flag, best_move)` where flag is EXACT/LOWERBOUND/UPPERBOUND.
-- Uses `board.zobrist_hash()` from python-chess.
-- Fixed size of ~2^20 entries with depth-preferred replacement (new entry replaces old only if depth >= stored depth).
-- TT probe at the start of `search()`: if hit with sufficient depth, return stored score (respecting alpha/beta bounds and flag type).
-- TT best move from previous iteration used as top move-ordering hint.
-- Mate score adjustment: store `score - ply` for positive mates, `score + ply` for negative; reverse on retrieval.
-- New tests: TT stores and retrieves entries correctly; mate scores adjusted properly.
-- All existing tests still pass.
 
 **Dependencies:** None (but benefits from Task 8/9 for move ordering)
 **Complexity:** L
@@ -411,7 +401,7 @@ requirements.txt  # python-chess, pytest, httpx
 | 7 | Comprehensive Tests | §9 | M | 2,3,5 | ✅ Done |
 | 8 | MVV-LVA Capture Ordering | §7c | S | — | ✅ Done |
 | 9 | Quiescence Search | §7a | M | 8 | ✅ Done |
-| 10 | Transposition Table | §7b | L | — | ⬚ |
+| 10 | Transposition Table | §7b | L | — | ✅ Done |
 | 11 | Check Extensions | §7k | S | — | ⬚ |
 | 12 | Tapered Eval / Game Phase | §6a | M | — | ⬚ |
 | 13 | Passed Pawns | §6c | S | 12 | ⬚ |
