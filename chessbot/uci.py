@@ -12,7 +12,7 @@ import sys
 
 import chess
 
-from chessbot.engine import DEFAULT_DEPTH, get_best_move, get_best_move_timed
+from chessbot.engine import DEFAULT_DEPTH, get_best_move, get_best_move_timed, tt
 
 
 def handle_command(board: chess.Board, line: str) -> str | None:
@@ -38,6 +38,7 @@ def handle_command(board: chess.Board, line: str) -> str | None:
 
     if cmd == "ucinewgame":
         board.reset()
+        tt.clear()
         return None
 
     if cmd == "position":
