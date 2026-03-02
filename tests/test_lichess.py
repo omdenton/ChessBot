@@ -48,14 +48,20 @@ def _game_over_event() -> str:
 class FakeStreamResponse:
     """Simulates an httpx streaming response that yields lines on demand."""
 
-    def __init__(self, lines: list[str], hang_after: int | None = None):
+    def __init__(self, lines: list[str], keepalive_after: int | None = None,
+                 keepalive_count: int = 20, keepalive_delay: float = 0.02):
         """
         lines: JSON lines to yield.
-        hang_after: if set, after yielding this many lines, the iterator
-                    will block forever (simulating opponent not moving).
+        keepalive_after: if set, after yielding this many real lines, emit
+                         empty keep-alive lines (like Lichess does) to simulate
+                         the opponent not moving while the stream stays alive.
+        keepalive_count: how many keep-alive lines to send.
+        keepalive_delay: delay between each keep-alive line.
         """
         self._lines = lines
-        self._hang_after = hang_after
+        self._keepalive_after = keepalive_after
+        self._keepalive_count = keepalive_count
+        self._keepalive_delay = keepalive_delay
 
     def raise_for_status(self):
         pass
@@ -63,10 +69,13 @@ class FakeStreamResponse:
     async def aiter_lines(self):
         for i, line in enumerate(self._lines):
             yield line
-            if self._hang_after is not None and i + 1 >= self._hang_after:
-                # Block forever after yielding hang_after lines — the test
-                # relies on asyncio.wait_for to break out via TimeoutError.
-                await asyncio.Event().wait()
+            if self._keepalive_after is not None and i + 1 >= self._keepalive_after:
+                # Simulate Lichess keep-alive empty lines while opponent
+                # doesn't move.  The abort logic uses wall-clock time so
+                # these should not prevent the timeout from firing.
+                for _ in range(self._keepalive_count):
+                    await asyncio.sleep(self._keepalive_delay)
+                    yield ""
 
     async def __aenter__(self):
         return self
@@ -105,8 +114,10 @@ async def test_abort_when_opponent_never_moves():
     """When bot is black and white never plays, the game should be aborted."""
     game_full = _game_full_event("black")
 
-    # gameFull is yielded, then the stream hangs (opponent never moves).
-    fake_resp = FakeStreamResponse([game_full], hang_after=1)
+    # gameFull is yielded, then the stream sends keep-alive blanks while
+    # opponent never moves.  With a 0.1s timeout and 20×0.02s keep-alives
+    # the deadline will expire during the keep-alive phase.
+    fake_resp = FakeStreamResponse([game_full], keepalive_after=1)
 
     client = AsyncMock()
     client.stream = MagicMock(return_value=fake_resp)

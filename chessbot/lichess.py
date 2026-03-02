@@ -1,6 +1,7 @@
 import os
 import json
 import random
+import time
 import httpx
 import chess
 import asyncio
@@ -125,29 +126,22 @@ async def _handle_game_start(client: httpx.AsyncClient, token: str, bot_id: str,
     headers = {"Authorization": f"Bearer {token}"}
     url = f"{LICHESS_API_BASE_URL}/api/bot/game/stream/{game_id}"
 
-    # Track whether we're waiting for the opponent's first move so we can
-    # abort if they never play (avoids getting stuck forever).
-    waiting_for_first_move = False
+    # Wall-clock deadline for the opponent's first move.  Set to a real
+    # timestamp once we know we're waiting (bot is black, no moves yet).
+    # Lichess sends empty keep-alive lines every ~15s, so we can't rely on
+    # asyncio.wait_for — instead we check elapsed time on every iteration.
+    first_move_deadline: float | None = None
 
     try:
         async with client.stream("GET", url, headers=headers, timeout=None) as response:
             response.raise_for_status()
             print(f"Connected to game stream for game {game_id}. Waiting for events...")
-            line_iter = response.aiter_lines().__aiter__()
-            while True:
-                # If we're waiting for the opponent's opening move, apply
-                # a timeout so the bot doesn't sit here forever.
-                timeout = _FIRST_MOVE_TIMEOUT if waiting_for_first_move else None
-                try:
-                    if timeout is not None:
-                        line = await asyncio.wait_for(line_iter.__anext__(), timeout=timeout)
-                    else:
-                        line = await line_iter.__anext__()
-                except asyncio.TimeoutError:
+            async for line in response.aiter_lines():
+                # Check the first-move deadline before processing each line
+                # (including keep-alive blanks).
+                if first_move_deadline is not None and time.monotonic() >= first_move_deadline:
                     print(f"[{game_id}] Opponent hasn't moved in {_FIRST_MOVE_TIMEOUT}s — aborting game.")
                     await _abort_game(client, token, game_id)
-                    break
-                except StopAsyncIteration:
                     break
 
                 if not line.strip():
@@ -200,12 +194,12 @@ async def _handle_game_start(client: httpx.AsyncClient, token: str, bot_id: str,
                         elif not board.is_game_over() and not moves_played:
                             # No moves yet and it's not our turn — opponent
                             # is white and hasn't played their first move.
-                            waiting_for_first_move = True
+                            first_move_deadline = time.monotonic() + _FIRST_MOVE_TIMEOUT
                             print(f"[{game_id}] Waiting for opponent's first move (timeout: {_FIRST_MOVE_TIMEOUT}s)...")
 
                     elif event_type == "gameState":
-                        # Opponent moved — no longer waiting for first move.
-                        waiting_for_first_move = False
+                        # Opponent moved — cancel the first-move deadline.
+                        first_move_deadline = None
 
                         # Update times
                         white_time_ms = game_event["wtime"]
