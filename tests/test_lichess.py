@@ -202,3 +202,67 @@ async def test_no_abort_timeout_when_bot_is_white():
 
     abort_calls = [c for c in post_mock.call_args_list if "abort" in str(c)]
     assert len(abort_calls) == 0
+
+
+# ---------------------------------------------------------------------------
+# 5. Concurrent game limit: challenge declined when at MAX_CONCURRENT_GAMES
+# ---------------------------------------------------------------------------
+
+
+def _bot_compat_challenge(challenge_id: str = "chal1") -> tuple[dict, dict]:
+    """Return (challenge, compat) dicts for a bot-compatible challenge."""
+    challenge = {"id": challenge_id, "challenger": {"name": "OtherBot"}}
+    compat = {"bot": True}
+    return challenge, compat
+
+
+@pytest.mark.asyncio
+async def test_challenge_declined_when_at_game_limit():
+    """Challenge should be declined when _active_games is at MAX_CONCURRENT_GAMES."""
+    client = AsyncMock()
+    post_mock = AsyncMock(return_value=MagicMock(raise_for_status=MagicMock()))
+    client.post = post_mock
+
+    challenge, compat = _bot_compat_challenge("chal_full")
+
+    original_max = lichess.MAX_CONCURRENT_GAMES
+    lichess.MAX_CONCURRENT_GAMES = 2
+    lichess._active_games.clear()
+    lichess._active_games.update({"game_a", "game_b"})
+    try:
+        await lichess._handle_challenge(client, "tok", "testbot", challenge, compat)
+    finally:
+        lichess.MAX_CONCURRENT_GAMES = original_max
+        lichess._active_games.clear()
+
+    # Should POST to decline, not accept.
+    assert client.post.called
+    call_url = client.post.call_args[0][0]
+    assert "decline" in call_url
+    assert "chal_full" in call_url
+
+
+@pytest.mark.asyncio
+async def test_challenge_accepted_when_below_game_limit():
+    """Challenge should be accepted when _active_games is below MAX_CONCURRENT_GAMES."""
+    client = AsyncMock()
+    post_mock = AsyncMock(return_value=MagicMock(raise_for_status=MagicMock()))
+    client.post = post_mock
+
+    challenge, compat = _bot_compat_challenge("chal_open")
+
+    original_max = lichess.MAX_CONCURRENT_GAMES
+    lichess.MAX_CONCURRENT_GAMES = 3
+    lichess._active_games.clear()
+    lichess._active_games.add("game_a")
+    try:
+        await lichess._handle_challenge(client, "tok", "testbot", challenge, compat)
+    finally:
+        lichess.MAX_CONCURRENT_GAMES = original_max
+        lichess._active_games.clear()
+
+    # Should POST to accept, not decline.
+    assert client.post.called
+    call_url = client.post.call_args[0][0]
+    assert "accept" in call_url
+    assert "chal_open" in call_url

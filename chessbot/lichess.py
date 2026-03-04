@@ -13,6 +13,9 @@ LICHESS_API_BASE_URL = "https://lichess.org"
 # Track active games so the auto-challenge loop waits while playing.
 _active_games: set[str] = set()
 
+# Maximum number of games to play simultaneously.
+MAX_CONCURRENT_GAMES = 3
+
 # How long to wait for the opponent's first move before aborting (seconds).
 _FIRST_MOVE_TIMEOUT = 90
 
@@ -57,6 +60,22 @@ async def _handle_challenge(client: httpx.AsyncClient, token: str, bot_id: str, 
             decline_url = f"{LICHESS_API_BASE_URL}/api/challenge/{challenge_id}/decline"
             headers = {"Authorization": f"Bearer {token}"}
             response = await client.post(decline_url, headers=headers, json={"reason": "bot incompatible"})
+            response.raise_for_status()
+            print(f"Declined challenge {challenge_id}.")
+        except httpx.HTTPStatusError as e:
+            print(f"Failed to decline challenge {challenge_id}: {e}")
+            print(f"Response: {e.response.text}")
+        except httpx.RequestError as e:
+            print(f"Request error declining challenge {challenge_id}: {e}")
+        return
+
+    # Decline if already at the concurrent game limit.
+    if len(_active_games) >= MAX_CONCURRENT_GAMES:
+        print(f"Declining challenge {challenge_id}: already at {MAX_CONCURRENT_GAMES} concurrent games.")
+        try:
+            decline_url = f"{LICHESS_API_BASE_URL}/api/challenge/{challenge_id}/decline"
+            headers = {"Authorization": f"Bearer {token}"}
+            response = await client.post(decline_url, headers=headers, json={"reason": "later"})
             response.raise_for_status()
             print(f"Declined challenge {challenge_id}.")
         except httpx.HTTPStatusError as e:
@@ -341,7 +360,7 @@ async def _auto_challenge_loop(client: httpx.AsyncClient, token: str, bot_id: st
     print("[auto-challenge] Auto-challenge loop started.")
 
     while True:
-        if _active_games:
+        if len(_active_games) >= MAX_CONCURRENT_GAMES:
             await asyncio.sleep(10)
             continue
 
