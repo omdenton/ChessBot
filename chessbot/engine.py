@@ -389,9 +389,15 @@ def get_best_move_timed(
 
     depth = 2
     while time.monotonic() < deadline:
+        depth_start = time.monotonic()
         _, candidate = search(board, depth, -(CHECKMATE_SCORE + 1), CHECKMATE_SCORE + 1)
+        depth_elapsed = time.monotonic() - depth_start
         assert candidate is not None
         best_move = candidate
         depth += 1
+        # If the last depth took longer than half the remaining budget, stop now.
+        # The next depth will take much longer (branching factor) and would freeze.
+        if depth_elapsed * 2 > deadline - time.monotonic():
+            break
 
     return best_move
